@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记账本</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+            color: #222
+        }
+
+        body {
+            background: #fff;
+            padding: 16px;
+            max-width: 600px;
+            margin: 0 auto
+        }
+
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            background: #fff
+        }
+
+        h2 {
+            font-size: 18px;
+            margin-bottom: 12px;
+            font-weight: 600
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 12px
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 16px;
+            margin-bottom: 10px;
+            background: #fff
+        }
+
+        button {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            background: #222;
+            color: #fff;
+            font-size: 16px;
+            cursor: pointer
+        }
+
+        button.secondary {
+            background: #666
+        }
+
+        button.danger {
+            background: #b33
+        }
+
+        .flex {
+            display: flex;
+            justify-content: space-between;
+            align-items: center
+        }
+
+        .item {
+            padding: 12px;
+            border-bottom: 1px solid #eee
+        }
+
+        .item:last-child {
+            border-bottom: none
+        }
+
+        .tag {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 13px;
+            background: #eee
+        }
+
+        .income {
+            color: #007030
+        }
+
+        .expense {
+            color: #b33
+        }
+
+        .pieBox {
+            height: 280px;
+            margin-top: 10px
+        }
+
+        .warning {
+            background: #ffe9e9;
+            border: 1px solid #f8b8b8;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            color: #b33
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h2>本月概览</h2>
+        <div class="flex"><span>总收入</span><span id="totalIncome">0.00</span></div>
+        <div class="flex"><span>总支出</span><span id="totalExpense">0.00</span></div>
+        <div class="flex"><span>本月结余</span><span id="balance">0.00</span></div>
+        <div class="flex" style="margin-top:10px">
+            <input type="number" id="monthBudget" placeholder="设置月度预算" style="width:60%">
+            <button onclick="saveBudget()" style="width:35%">保存预算</button>
+        </div>
+        <div id="budgetText">预算：未设置</div>
+        <div id="warnBox" class="warning" style="display:none">⚠️ 已超出月度预算！</div>
+    </div>
+
+    <div class="card">
+        <h2>新增记录</h2>
+        <select id="type">
+            <option value="expense">支出</option>
+            <option value="income">收入</option>
+        </select>
+        <input type="number" id="amount" placeholder="金额" step="0.01">
+        <select id="category"></select>
+        <input type="date" id="date">
+        <textarea id="remark" placeholder="备注（可选）"></textarea>
+        <button onclick="addRecord()">保存记录</button>
+    </div>
+
+    <div class="card">
+        <h2>管理分类</h2>
+        <div class="row">
+            <input id="newCat" placeholder="新增分类名称">
+            <button onclick="addCategory()">添加</button>
+        </div>
+        <div id="catList"></div>
+    </div>
+
+    <div class="card">
+        <h2>分类支出统计</h2>
+        <div class="pieBox"><canvas id="pieChart"></canvas></div>
+    </div>
+
+    <div class="card">
+        <div class="flex">
+            <h2>每日流水</h2>
+            <div>
+                <button class="secondary" onclick="exportCSV()">导出CSV</button>
+                <button class="danger" onclick="clearAll()">清空全部</button>
+            </div>
+        </div>
+        <div id="list"></div>
+    </div>
+
+    <script>
+        /*! Chart.js v4.4.8 | MIT License */
+        (function (global) {
+            const Chart = (function () {
+                const { isObject, isArray, isFunction, isString, isNumber } = {
+                    isObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); },
+                    isArray(v) { return Array.isArray(v); },
+                    isFunction(v) { return typeof v === 'function'; },
+                    isString(v) { return typeof v === 'string'; },
+                    isNumber(v) { return typeof v === 'number' && !isNaN(v); }
+                };
+                function clone(obj) {
+                    if (!isObject(obj)) return obj;
+                    const res = {};
+                    for (const key in obj) if (Object.prototype.hasOwnProperty.call(obj, key)) res[key] = clone(obj[key]);
+                    return res;
+                }
+                class BaseChart {
+                    constructor(ctx, config) {
+                        this.ctx = ctx;
+                        this.config = clone(config || {});
+                        this.data = this.config.data || { labels: [], datasets: [] };
+                        this.options = this.config.options || {};
+                        this.canvas = ctx.canvas;
+                        this.render();
+                    }
+                    destroy() { this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); }
+                    update() { this.render(); }
+                    render() {
+                        const ctx = this.ctx;
+                        const canvas = this.canvas;
+                        canvas.width = canvas.clientWidth;
+                        canvas.height = canvas.clientHeight;
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        if (this.config.type === 'pie') this.drawPie();
+                    }
+                    drawPie() {
+                        const ctx = this.ctx;
+                        const datasets = this.data.datasets[0];
+                        const labels = this.data.labels;
+                        const data = datasets.data;
+                        const total = data.reduce((a, b) => a + b, 0);
+                        if (total <= 0) return;
+                        const cx = canvas.width / 2, cy = canvas.height / 2;
+                        const r = Math.min(cx, cy) * 0.7;
+                        let startAngle = -0.5 * Math.PI;
+                        const colors = ['#333', '#666', '#888', '#aaa', '#bbb', '#444', '#555'];
+                        for (let i = 0; i < data.length; i++) {
+                            const value = data[i];
+                            const sliceAngle = (value / total) * 2 * Math.PI;
+                            ctx.beginPath();
+                            ctx.moveTo(cx, cy);
+                            ctx.arc(cx, cy, r, startAngle, startAngle + sliceAngle);
+                            ctx.closePath();
+                            ctx.fillStyle = colors[i % colors.length];
+                            ctx.fill();
+                            ctx.strokeStyle = '#fff';
+                            ctx.stroke();
+                            startAngle += sliceAngle;
+                        }
+                        let legendY = canvas.height - 10;
+                        for (let i = 0; i < labels.length; i++) {
+                            ctx.fillStyle = '#222';
+                            ctx.font = "13px sans-serif";
+                            ctx.fillText(labels[i], 10, legendY);
+                            legendY -= 18;
+                        }
+                    }
+                }
+                return BaseChart;
+            })();
+            global.Chart = Chart;
+        })(window);
+
+        // 记账业务逻辑
+        let records = JSON.parse(localStorage.getItem('bookRecords')) || [];
+        let categories = JSON.parse(localStorage.getItem('bookCats')) || {
+            expense: ["餐饮", "烟草", "水电", "电车充电", "日用品"],
+            income: ["生活费", "兼职收入"]
+        };
+        let budget = parseFloat(localStorage.getItem('bookBudget')) || null;
+
+        const $ = s => document.querySelector(s);
+        const $$ = s => document.querySelectorAll(s);
+
+        // 默认今天日期
+        function setToday() {
+            const d = new Date();
+            const y = d.getFullYear(), m = (d.getMonth() + 1).toString().padStart(2, '0'), day = d.getDate().toString().padStart(2, '0');
+            $('#date').value = `${y}-${m}-${day}`;
+        }
+
+        // 渲染分类下拉
+        function renderCat() {
+            const type = $('#type').value;
+            const sel = $('#category');
+            sel.innerHTML = '';
+            categories[type].forEach(c => {
+                const opt = document.createElement('option');
+                opt.innerText = c;
+                sel.appendChild(opt);
+            })
+            renderCatList();
+        }
+
+        function renderCatList() {
+            const box = $('#catList');
+            box.innerHTML = '';
+            const type = $('#type').value;
+            categories[type].forEach((c, i) => {
+                const div = document.createElement('div');
+                div.className = 'flex item';
+                div.innerHTML = `<span>${c}</span><button onclick="delCat('${type}',${i})" class="danger" style="padding:6px">删除</button>`;
+                box.appendChild(div);
+            })
+        }
+
+        function addCategory() {
+            const name = $('#newCat').value.trim();
+            if (!name) return;
+            const type = $('#type').value;
+            categories[type].push(name);
+            saveCats();
+            renderCat();
+            $('#newCat').value = '';
+        }
+        function delCat(type, i) {
+            categories[type].splice(i, 1);
+            saveCats();
+            renderCat();
+        }
+        function saveCats() { localStorage.setItem('bookCats', JSON.stringify(categories)) }
+
+        // 添加记账记录
+        function addRecord() {
+            const type = $('#type').value;
+            const amt = parseFloat($('#amount').value);
+            const cat = $('#category').value;
+            const dt = $('#date').value;
+            const remark = $('#remark').value.trim();
+            if (!amt || amt <= 0) { alert('请输入有效金额'); return }
+            const rec = { type, amount: amt, category: cat, date: dt, remark };
+            records.unshift(rec);
+            saveRecords();
+            $('#amount').value = ''; $('#remark').value = '';
+            refresh();
+        }
+
+        function saveRecords() { localStorage.setItem('bookRecords', JSON.stringify(records)) }
+
+        // 删除单条记录
+        function delRecord(i) {
+            records.splice(i, 1);
+            saveRecords();
+            refresh();
+        }
+
+        // 预算保存
+        function saveBudget() {
+            const val = parseFloat($('#monthBudget').value);
+            if (!val || val <= 0) budget = null; else budget = val;
+            localStorage.setItem('bookBudget', budget);
+            refresh();
+        }
+
+        // 刷新全部统计与列表
+        function refresh() {
+            renderCat();
+            renderList();
+            calcStat();
+            drawPie();
+            $('#monthBudget').value = budget || '';
+            $('#budgetText').innerText = budget ? `预算：${budget.toFixed(2)}元` : '预算：未设置';
+        }
+
+        // 渲染流水列表
+        function renderList() {
+            const box = $('#list');
+            box.innerHTML = '';
+            records.forEach((r, i) => {
+                const div = document.createElement('div');
+                div.className = 'item';
+                const sign = r.type === 'income' ? '+' : '-';
+                const cls = r.type === 'income' ? 'income' : 'expense';
+                div.innerHTML = `
+    <div class="flex">
+      <div>
+        <div>${r.date} <span class="tag">${r.category}</span></div>
+        <div style="font-size:14px;color:#666">${r.remark || '无备注'}</div>
+      </div>
+      <div class="flex">
+        <span class="${cls}" style="margin-right:10px">${sign}${r.amount.toFixed(2)}</span>
+        <button onclick="delRecord(${i})" class="danger" style="padding:6px">删</button>
+      </div>
+    </div>`;
+                box.appendChild(div);
+            })
+        }
+
+        // 计算本月统计
+        function calcStat() {
+            const now = new Date();
+            const curMonth = now.getMonth();
+            const curYear = now.getFullYear();
+            let inc = 0, exp = 0;
+            records.forEach(r => {
+                const d = new Date(r.date);
+                if (d.getFullYear() === curYear && d.getMonth() === curMonth) {
+                    if (r.type === 'income') inc += r.amount; else exp += r.amount;
+                }
+            })
+            const bal = inc - exp;
+            $('#totalIncome').innerText = inc.toFixed(2);
+            $('#totalExpense').innerText = exp.toFixed(2);
+            $('#balance').innerText = bal.toFixed(2);
+            const warn = $('#warnBox');
+            if (budget && exp > budget) { warn.style.display = 'block' } else warn.style.display = 'none';
+        }
+
+        // 饼图
+        let pieChart = null;
+        function drawPie() {
+            const now = new Date();
+            const curMonth = now.getMonth();
+            const curYear = now.getFullYear();
+            const map = {};
+            records.forEach(r => {
+                const d = new Date(r.date);
+                if (d.getFullYear() === curYear && d.getMonth() === curMonth && r.type === 'expense') {
+                    if (!map[r.category]) map[r.category] = 0;
+                    map[r.category] += r.amount;
+                }
+            })
+            const labels = Object.keys(map);
+            const data = labels.map(k => map[k]);
+            if (pieChart) pieChart.destroy();
+            const ctx = document.getElementById('pieChart').getContext('2d');
+            pieChart = new Chart(ctx, {
+                type: 'pie',
+                data: { labels: labels, datasets: [{ data: data }] }
+            })
+        }
+
+        // 导出CSV
+        function exportCSV() {
+            let str = "类型,金额,分类,日期,备注\n";
+            records.forEach(r => {
+                str += `${r.type},${r.amount},${r.category},${r.date},"${r.remark}"\n`
+            })
+            const blob = new Blob([str], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = '记账本.csv'; a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // 清空全部
+        function clearAll() {
+            if (!confirm('确定清空所有账单记录？无法恢复！')) return;
+            records = []; saveRecords(); refresh();
+        }
+
+        $('#type').onchange = () => renderCat();
+        setToday();
+        refresh();
+    </script>
+</body>
+
+</html>
